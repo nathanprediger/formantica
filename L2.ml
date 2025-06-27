@@ -58,5 +58,7 @@ let fat = Let("x", TyInt, Read,
                       seq)))
         
   
+let rec small_step ( e: expr, mem: int array, entrada: int list, saida: int list ) : expr * int array * int list * int list =
+  match e with
   
     

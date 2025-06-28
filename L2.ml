@@ -83,7 +83,13 @@ let bop_step (op: bop, e1: expr, e2: expr) : expr =
   | Or, Bool b1, Bool b2 -> Bool (b1 || b2)
   | _ -> failwith "Invalid binary operation"
 
-let rec small_step ( e: expr, mem: int array, entrada: int list, saida: int list ) : expr * int array * int list * int list =
+let empty_pos_mem (mem: int*bool array) : int =
+  let i = ref 0 in
+  while !i < Array.length mem && snd mem.(!i) do
+    i := !i + 1
+  done;
+
+let rec small_step ( e: expr, mem: int*bool array, entrada: int list, saida: int list ) : expr * int array * int list * int list =
   match e with
 | Num _ | Bool _ | Unit -> (e, mem, entrada, saida)
 | Binop (op, e1, e2) : when is_val e1 && is_val e2 ->
@@ -106,12 +112,19 @@ let rec small_step ( e: expr, mem: int array, entrada: int list, saida: int list
 | Wh (e1, e2) -> 
     (If(e1, Seq(e2, Wh(e1,e2)), (Unit, mem, entrada, saida)))
 | Asg (e1, e2) -> when is_val e1 && is_val e2 ->
-    (Unit, mem.(e1)<-e2, entrada, saida)
+    (Unit, mem.(e1)<-(e2, true), entrada, saida)
 | Asg (e1, e2) -> when is_val e1 ->
     (Asg(e1, small_step(e2, mem, entrada, saida)), mem, entrada, saida)
 | Asg (e1, e2) -> 
     (Asg(small_step(e1, mem, entrada, saida), e2), mem, entrada, saida)
-| Let()
+| Let (var, tp, e1, e2) when is_val e1 && is_val e2 ->  
+
+| Let (var, tp, e1, e2) ->
+    (Let(var, tp, small_step(e1, mem, entrada, saida), e2), mem, entrada, saida)
+| New (e1) -> when is_val e1 ->
+    let pos = empty_pos_mem mem in
+    let new_mem = Array.copy mem in
+    new_mem.(pos) <- (e1, true);
 
 
   

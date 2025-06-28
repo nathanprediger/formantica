@@ -178,6 +178,80 @@ let rec small_step ((e, mem, entrada, saida) : expr * (expr * bool) array * int 
        | [] -> failwith "Entrada vazia!"
        | h :: t -> (Num h, mem, t, saida))
 
+
+let rec typeInfer (e: expr) : tipo =
+  match e with
+  | Id _ -> failwith "Type inference for identifiers not implemented"
+  | Num _ -> TyInt
+  | Bool _ -> TyBool
+  | Binop(op, e1, e2) ->
+      let t1 = typeInfer e1 in
+      let t2 = typeInfer e2 in
+      (match op with
+       | Sum | Sub | Mul | Div -> if t1 = TyInt && t2 = TyInt then TyInt else failwith "Type error in arithmetic operation"
+       | Eq | Neq | Lt | Gt -> if t1 = TyInt && t2 = TyInt then TyBool else failwith "Type error in relational operation"
+       | And | Or -> if t1 = TyBool && t2 = TyBool then TyBool else failwith "Type error in logical operation")
+  | If (e1, e2, e3) ->
+      let t1 = typeInfer e1 in        
+      let t2 = typeInfer e2 in
+      let t3 = typeInfer e3 in
+      if t1 = TyBool && t2 = t3 then t2
+      else failwith "Type error in if expression"
+  | Wh (e1, e2) ->
+      let t1 = typeInfer e1 in  
+      let t2 = typeInfer e2 in
+      if t1 = TyBool && t2 = TyUnit then TyUnit
+      else failwith "Type error in while expression"
+  | Asg (e1, e2) ->
+      let t1 = typeInfer e1 in
+      let t2 = typeInfer e2 in
+      (match t1 with
+       | TyRef t when t = t2 -> TyUnit
+       | _ -> failwith "Type error in assignment")
+  | Let (var, tp, e1, e2) ->
+      let t1 = typeInfer e1 in
+      if t1 = tp then
+        let e2' = subst_var (e2, var, e1) in
+        typeInfer e2'
+      else
+        failwith "Type error in let binding"
+  | New e1 ->
+      let t1 = typeInfer e1 in
+      TyRef t1
+  | Deref e1 -> 
+      let t1 = typeInfer e1 in
+      (match t1 with
+       | TyRef t -> t
+       | _ -> failwith "Type error in dereference") 
+  | Unit -> TyUnit
+  | Seq (e1, e2) ->
+      let t1 = typeInfer e1 in
+      let t2 = typeInfer e2 in
+      if t1 = TyUnit then t2 else failwith "Type error in sequence"
+  | Read -> TyInt
+  | Print e1 ->
+      let t1 = typeInfer e1 in
+      if t1 = TyInt then TyUnit else failwith "Type error in print"
+
+let test_typeInfer () =
+  let test_cases = [
+    (Num 42, TyInt);
+    (Bool true, TyBool);
+    (Binop(Sum, Num 1, Num 2), TyInt);
+    (If(Bool true, Num 1, Num 2), TyInt);
+    (Wh(Bool true, Seq(Asg(Id "x", Num 1), Unit)), TyUnit);
+    (Let("x", TyInt, Num 5, Id "x"), TyInt);
+    (New (Num 10), TyRef TyInt);
+    (Deref (Num 0), TyInt);
+    (Seq(Unit, Num 1), TyInt);
+    (Print(Num 5), TyUnit)
+  ] in
+  List.iter (fun (expr, expected_type) ->
+      let inferred_type = typeInfer expr in
+      assert (inferred_type = expected_type)
+    ) test_cases;
+  print_endline "All type inference tests passed!"
+
 let main (entrada: int list) =
   (* 1. Initialize the state *)
   let mem = Array.make 100 (Unit, false) in 
@@ -198,5 +272,10 @@ let main (entrada: int list) =
   List.iter (fun my_int -> (* The value is already an int *)
       print_int my_int;      (* Print it directly *)
       print_newline ()
-    ) result_list
+    ) result_list;
+
+  test_typeInfer (); (* Run the type inference tests *)
+  
+
+  
   

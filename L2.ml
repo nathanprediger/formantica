@@ -57,8 +57,62 @@ let fat = Let("x", TyInt, Read,
                   Let("y", TyRef TyInt, New (Num 1),
                       seq)))
         
-  
+
+
+
+let is_val (e: expr) : bool =
+  match e with
+  | Num _ | Bool _ | Unit -> true
+  | _ -> false
+let is_unit (e: expr) : bool =
+  match e with 
+  | Unit -> true
+  | _ -> false
+
+let bop_step (op: bop, e1: expr, e2: expr) : expr =
+  match op, e1, e2 with
+  | Sum, Num n1, Num n2 -> Num (n1 + n2)
+  | Sub, Num n1, Num n2 -> Num (n1 - n2)
+  | Mul, Num n1, Num n2 -> Num (n1 * n2)
+  | Div, Num n1, Num n2 when n2 <> 0 -> Num (n1 / n2)
+  | Eq, Num n1, Num n2 -> Bool (n1 = n2)
+  | Neq, Num n1, Num n2 -> Bool (n1 <> n2)
+  | Lt, Num n1, Num n2 -> Bool (n1 < n2)
+  | Gt, Num n1, Num n2 -> Bool (n1 > n2)
+  | And, Bool b1, Bool b2 -> Bool (b1 && b2)
+  | Or, Bool b1, Bool b2 -> Bool (b1 || b2)
+  | _ -> failwith "Invalid binary operation"
+
 let rec small_step ( e: expr, mem: int array, entrada: int list, saida: int list ) : expr * int array * int list * int list =
   match e with
+| Num _ | Bool _ | Unit -> (e, mem, entrada, saida)
+| Binop (op, e1, e2) : when is_val e1 && is_val e2 ->
+    (bop_step(op, e1, e2), mem, entrada, saida)
+| Binop (op, e1, e2) -> when is_val e1 ->
+    (Binop(op, e1, small_step(e2, mem, entrada, saida)), mem, entrada, saida)
+| Binop (op, e1, e2) -> 
+    (Binop(op, small_step(e1, mem, entrada, saida), e2), mem, entrada, saida)
+| If (e1, e2, e3) when is_val e1 ->
+    (match e1 with
+     | Bool true -> (e2, mem, entrada, saida)
+     | Bool false -> (e3, mem, entrada, saida)
+     | _ -> failwith "Condition must be a boolean")
+| If (e1, e2, e3) -> 
+    (If(small_step(e1, mem, entrada, saida), e2, e3), mem, entrada, saida)
+| Seq (e1, e2) -> when is_unit e1 ->
+    (e2, mem, entrada, saida)
+| Seq (e1, e2) -> 
+    (Seq(small_step(e1, mem, entrada, saida),e2), mem, entrada, saida)
+| Wh (e1, e2) -> 
+    (If(e1, Seq(e2, Wh(e1,e2)), (Unit, mem, entrada, saida)))
+| Asg (e1, e2) -> when is_val e1 && is_val e2 ->
+    (Unit, mem.(e1)<-e2, entrada, saida)
+| Asg (e1, e2) -> when is_val e1 ->
+    (Asg(e1, small_step(e2, mem, entrada, saida)), mem, entrada, saida)
+| Asg (e1, e2) -> 
+    (Asg(small_step(e1, mem, entrada, saida), e2), mem, entrada, saida)
+| Let()
+
+
   
     

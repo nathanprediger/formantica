@@ -25,6 +25,7 @@ type expr =
   | Seq of expr * expr
   | Read
   | Print of expr
+  | For of expr * expr * expr * expr
   
       
 
@@ -56,7 +57,24 @@ let fat = Let("x", TyInt, Read,
               Let("z", TyRef TyInt, New (Id "x"), 
                   Let("y", TyRef TyInt, New (Num 1),
                       seq)))
-        
+let corpo_do_loop =
+  Seq(
+    Asg(Id "y", Binop(Mul, Deref(Id "y"), Deref(Id "i"))),
+    Asg(Id "i", Binop(Sum, Deref(Id "i"), Num 1))
+  )
+
+let fat_com_for_simples =
+  Let("x", TyInt, Read,
+    Let("y", TyRef TyInt, New (Num 1),
+      Let("i", TyRef TyInt, New (Num 1),
+        Seq(
+          (* Usa o For como um "repeat x times" *)
+          For(Num 0, Id "x", Num 1, corpo_do_loop),
+          Print(Deref(Id "y"))
+        )
+      )
+    )
+  )
 
 
 
@@ -108,6 +126,9 @@ let rec subst_var (e,var,v : expr*string*expr) : expr =
   | Deref (e1) -> Deref(subst_var(e1,var,v))
   | Seq(e1, e2) -> Seq(subst_var(e1,var,v),subst_var(e2,var,v))
   | Print(e1) -> Print(subst_var(e1,var,v))
+
+  | For (var1, e1, e2, e3) when var = var1 -> For(var1, subst_var(e1,var,v), subst_var(e2,var,v), e3)
+  | For (var1, e1, e2, e3) -> For(var1, subst_var(e1,var,v), subst_var(e2,var,v), subst_var(e3, var, v))
   
   | Let(var1, tp, e1, e2) when var=var1 -> Let(var1, tp, subst_var(e1,var,v), e2)
   | Let(var1, tp, e1, e2) -> Let(var1, tp, subst_var(e1,var,v), subst_var(e2,var,v)) 
@@ -177,6 +198,11 @@ let rec small_step ((e, mem, entrada, saida) : expr * (expr * bool) array * int 
       (match entrada with
        | [] -> failwith "Entrada vazia!"
        | h :: t -> (Num h, mem, t, saida))
+  | For (e1, e2, e3, e4) ->
+  (If(Binop(Lt, e1, e2), 
+      Seq(e4, For(Binop(Sum, e1, e3), e2, e3, e4)), 
+      Unit), 
+  mem, entrada, saida)
 
 let rec procura_var (var, contexto: string * (string * tipo) list) : tipo =
   match contexto with
@@ -215,11 +241,11 @@ let rec typeInfer (e, contexto: expr * (string * tipo) list) : tipo =
        | TyRef t when t = t2 -> TyUnit
        | _ -> failwith "Type error in assignment")
   | Let (var, tp, e1, e2) ->
-    let t1 = typeInfer (e1, contexto) in
-    if t1 = tp then
+      let t1 = typeInfer (e1, contexto) in
+      if t1 = tp then
         let novo_contexto = (var, tp) :: contexto in
         typeInfer (e2, novo_contexto)
-    else
+      else
         failwith "Type error in let binding"
   | New e1 ->
       let t1 = typeInfer (e1, contexto) in
@@ -238,7 +264,13 @@ let rec typeInfer (e, contexto: expr * (string * tipo) list) : tipo =
   | Print e1 ->
       let t1 = typeInfer (e1, contexto) in
       if t1 = TyInt then TyUnit else failwith "Type error in print"
-
+  | For (e1, e2, e3, e4) ->
+      let t1 = typeInfer (e1, contexto) in
+      let t2 = typeInfer (e2, contexto) in
+      let t3 = typeInfer (e3, contexto) in
+      let t4 = typeInfer (e4, contexto) in
+      if t1 = TyInt && t2 = TyInt && t2 = TyInt && t4 = TyUnit then TyUnit
+      else failwith "Type error in for loop"  
 let test_typeInfer () =
   let test_cases = [
     (Num 42, TyInt);
@@ -269,7 +301,7 @@ let main (entrada: int list) =
   in
 
   (* 3. Call the loop with the initial state and capture the result *)
-  let result_list = loop (fat, mem, entrada, saida) in
+  let result_list = loop (fat2, mem, entrada, saida) in
 
   (* 4. Iterate through the result list and print each element *)
   print_endline "Output:";
@@ -279,7 +311,5 @@ let main (entrada: int list) =
     ) result_list;
 
   test_typeInfer (); (* Run the type inference tests *)
-  
-
   
   

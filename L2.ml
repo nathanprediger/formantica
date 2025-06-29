@@ -25,7 +25,7 @@ type expr =
   | Seq of expr * expr
   | Read
   | Print of expr
-  | For of expr * expr * expr * expr
+  | For of string * expr * expr * expr * expr 
   
       
 
@@ -58,25 +58,24 @@ let fat = Let("x", TyInt, Read,
                   Let("y", TyRef TyInt, New (Num 1),
                       seq)))
 let corpo_do_loop =
-  Seq(
-    Asg(Id "y", Binop(Mul, Deref(Id "y"), Deref(Id "i"))),
-    Asg(Id "i", Binop(Sum, Deref(Id "i"), Num 1))
-  )
+  Seq( 
+    Asg(Id "y", Binop(Mul, Deref(Id "y"), Deref(Id "i"))), 
+    Print(Deref(Id "i"))
+  )  
+    
 
-let fat_com_for_simples =
+let fat2 =
   Let("x", TyInt, Read,
-    Let("y", TyRef TyInt, New (Num 1),
-      Let("i", TyRef TyInt, New (Num 1),
-        Seq(
-          (* Usa o For como um "repeat x times" *)
-          For(Num 0, Id "x", Num 1, corpo_do_loop),
-          Print(Deref(Id "y"))
-        )
-      )
-    )
-  )
-
-
+      Let("y", TyRef TyInt, New (Num 1),
+          Seq(
+        (* for i = 1 to x+1 do y := !y * i *)
+            For("i", Num 1, Binop(Sum, Id "x", Num 1), Num 1,
+                corpo_do_loop
+               ),
+            Print(Deref(Id "y"))
+          )
+         )
+     )
 
 let is_val (e: expr) : bool =
   match e with
@@ -99,7 +98,7 @@ let bop_step (op, e1, e2 : bop*expr*expr) : expr =
   | Gt, Num n1, Num n2 -> Bool (n1 > n2)
   | And, Bool b1, Bool b2 -> Bool (b1 && b2)
   | Or, Bool b1, Bool b2 -> Bool (b1 || b2)
-  | _ -> failwith "Invalid binary operation"
+  | _ -> failwith "Invalid operation!"
 
 let empty_pos_mem (mem : (expr * bool) array) : int =
   let i = ref 0 in
@@ -111,7 +110,7 @@ let empty_pos_mem (mem : (expr * bool) array) : int =
 let int_expr (e: expr) : int =
   match e with
   | Num n -> n
-  | _ -> failwith "Nao é inteiro"
+  | _ -> failwith "Not a integer"
 
 let rec subst_var (e,var,v : expr*string*expr) : expr =
   match e with
@@ -127,8 +126,7 @@ let rec subst_var (e,var,v : expr*string*expr) : expr =
   | Seq(e1, e2) -> Seq(subst_var(e1,var,v),subst_var(e2,var,v))
   | Print(e1) -> Print(subst_var(e1,var,v))
 
-  | For (var1, e1, e2, e3) when var = var1 -> For(var1, subst_var(e1,var,v), subst_var(e2,var,v), e3)
-  | For (var1, e1, e2, e3) -> For(var1, subst_var(e1,var,v), subst_var(e2,var,v), subst_var(e3, var, v))
+  | For (var1, e1, e2, e3, e4) -> For(var1, subst_var(e1, var, v), subst_var(e2, var, v), subst_var(e3, var, v), subst_var(e4, var, v))
   
   | Let(var1, tp, e1, e2) when var=var1 -> Let(var1, tp, subst_var(e1,var,v), e2)
   | Let(var1, tp, e1, e2) -> Let(var1, tp, subst_var(e1,var,v), subst_var(e2,var,v)) 
@@ -149,7 +147,7 @@ let rec small_step ((e, mem, entrada, saida) : expr * (expr * bool) array * int 
       (match e1 with
        | Bool true -> (e2, mem, entrada, saida)
        | Bool false -> (e3, mem, entrada, saida)
-       | _ -> failwith "Condition must be a boolean")
+       | _ -> failwith "Not a boolean!")
   | If (e1, e2, e3) ->
       let (e1', mem', entrada', saida') = small_step (e1, mem, entrada, saida) in
       (If (e1', e2, e3), mem', entrada', saida')
@@ -196,13 +194,21 @@ let rec small_step ((e, mem, entrada, saida) : expr * (expr * bool) array * int 
       (Print e1', mem', entrada', saida')
   | Read ->
       (match entrada with
-       | [] -> failwith "Entrada vazia!"
+       | [] -> failwith "Empty entry!"
        | h :: t -> (Num h, mem, t, saida))
-  | For (e1, e2, e3, e4) ->
-  (If(Binop(Lt, e1, e2), 
-      Seq(e4, For(Binop(Sum, e1, e3), e2, e3, e4)), 
-      Unit), 
-  mem, entrada, saida)
+  | For (var, e_init, e_limit, e_step, e_body) ->
+      let for_ =
+        Let (var, TyRef TyInt, New(e_init),
+             Wh (
+               Binop(Lt, Deref(Id var), e_limit),
+               Seq (
+                 e_body,
+                 Asg (Id var, Binop(Sum, Deref(Id var), e_step))
+               )
+             )
+            )
+      in
+      (for_, mem, entrada, saida)
 
 let rec procura_var (var, contexto: string * (string * tipo) list) : tipo =
   match contexto with
@@ -264,13 +270,19 @@ let rec typeInfer (e, contexto: expr * (string * tipo) list) : tipo =
   | Print e1 ->
       let t1 = typeInfer (e1, contexto) in
       if t1 = TyInt then TyUnit else failwith "Type error in print"
-  | For (e1, e2, e3, e4) ->
-      let t1 = typeInfer (e1, contexto) in
-      let t2 = typeInfer (e2, contexto) in
-      let t3 = typeInfer (e3, contexto) in
-      let t4 = typeInfer (e4, contexto) in
-      if t1 = TyInt && t2 = TyInt && t2 = TyInt && t4 = TyUnit then TyUnit
-      else failwith "Type error in for loop"  
+  | For (var, e_init, e_limit, e_step, e_body) ->
+      let t_init = typeInfer(e_init, contexto) in
+      let t_limit = typeInfer(e_limit, contexto) in
+      let t_step = typeInfer(e_step, contexto) in
+
+      if t_init = TyInt && t_limit = TyInt && t_step = TyInt then
+        let new_contexto = (var, TyRef TyInt) :: contexto in
+        let t_body = typeInfer(e_body, new_contexto) in
+
+        if t_body = TyUnit then TyUnit
+        else failwith "Type error: For loop body must return unit"
+      else
+        failwith "Type error: For loop parameters (init, limit, step) must be integers"  
 let test_typeInfer () =
   let test_cases = [
     (Num 42, TyInt);
@@ -289,27 +301,26 @@ let test_typeInfer () =
   print_endline "All type inference tests passed!"
 
 let main (entrada: int list) =
-  (* 1. Initialize the state *)
+
   let mem = Array.make 100 (Unit, false) in 
   let saida = [] in
 
-  (* 2. The loop must pass the state along in each recursive call *)
   let rec loop (e, mem, entrada, saida) =
     match small_step (e, mem, entrada, saida) with
-    | (Unit, _, _, final_saida) -> List.rev final_saida (* Base case: program finished *)
-    | (e', mem', entrada', saida') -> loop (e', mem', entrada', saida') (* Recursive step with new state *)
+    | (Unit, _, _, final_saida) -> List.rev final_saida 
+    | (e', mem', entrada', saida') -> loop (e', mem', entrada', saida') 
   in
 
-  (* 3. Call the loop with the initial state and capture the result *)
-  let result_list = loop (fat2, mem, entrada, saida) in
 
-  (* 4. Iterate through the result list and print each element *)
+  let result_list = loop (fat, mem, entrada, saida) in
+
+  
   print_endline "Output:";
-  List.iter (fun my_int -> (* The value is already an int *)
-      print_int my_int;      (* Print it directly *)
+  List.iter (fun my_int -> 
+      print_int my_int;      
       print_newline ()
     ) result_list;
 
-  test_typeInfer (); (* Run the type inference tests *)
+  test_typeInfer (); 
   
   

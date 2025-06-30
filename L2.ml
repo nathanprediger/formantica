@@ -300,6 +300,15 @@ let test_typeInfer () =
     ) test_cases;
   print_endline "All type inference tests passed!"
 
+let big_step((e, mem, entrada, saida) : expr * (expr * bool) array * int list * int list) : (expr * (expr * bool) array * int list * int list) =
+  let rec loop(e_atual, mem_atual, entrada_atual, saida_atual) =
+    if is_val e_atual then (e_atual,mem_atual,entrada_atual,saida_atual)
+    else 
+      let (e_seg, mem_seg, entrada_seg, saida_seg) = small_step(e_atual, mem_atual, entrada_atual, saida_atual) in
+      loop(e_seg, mem_seg, entrada_seg, saida_seg)
+  in
+  loop (e, mem, entrada, saida)
+  
 let main (entrada: int list) =
 
   let mem = Array.make 100 (Unit, false) in 
@@ -312,7 +321,7 @@ let main (entrada: int list) =
   in
 
 
-  let result_list = loop (fat, mem, entrada, saida) in
+  let result_list = loop (fat2, mem, entrada, saida) in
 
   
   print_endline "Output:";

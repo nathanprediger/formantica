@@ -79,7 +79,7 @@ let fat2 =
 
 let is_val (e: expr) : bool =
   match e with
-  | Num _ | Bool _ | Unit -> true
+  | Num _ | Bool _ | Unit | Id _ -> true
   | _ -> false
 let is_unit (e: expr) : bool =
   match e with 
@@ -100,12 +100,6 @@ let bop_step (op, e1, e2 : bop*expr*expr) : expr =
   | Or, Bool b1, Bool b2 -> Bool (b1 || b2)
   | _ -> failwith "Invalid operation!"
 
-let empty_pos_mem (mem : (expr * bool) array) : int =
-  let i = ref 0 in
-  while !i < Array.length mem && snd mem.(!i) do
-    i := !i + 1
-  done;
-  !i
 
 let int_expr (e: expr) : int =
   match e with
@@ -132,7 +126,7 @@ let rec subst_var (e,var,v : expr*string*expr) : expr =
   | Let(var1, tp, e1, e2) -> Let(var1, tp, subst_var(e1,var,v), subst_var(e2,var,v)) 
                             
 
-let rec small_step ((e, mem, entrada, saida) : expr * (expr * bool) array * int list * int list) : expr * (expr * bool) array * int list * int list =
+let rec small_step ((e, mem, entrada, saida) : expr * (int, expr) Hashtbl.t * int list * int list) : expr * (int, expr) Hashtbl.t * int list * int list =
   match e with
   | Num _ | Bool _ | Unit | Id _ -> (e, mem, entrada, saida)
   | Binop (op, e1, e2) when is_val e1 && is_val e2 ->
@@ -159,8 +153,8 @@ let rec small_step ((e, mem, entrada, saida) : expr * (expr * bool) array * int 
   | Wh (e1, e2) ->
       (If (e1, Seq (e2, Wh (e1, e2)), Unit), mem, entrada, saida)
   | Asg (Num addr, v) when is_val v ->
-      let new_mem = Array.copy mem in
-      new_mem.(addr) <- (v, true);
+      let new_mem = Hashtbl.copy mem in
+      Hashtbl.replace new_mem addr v;
       (Unit, new_mem, entrada, saida)
   | Asg (e1, e2) when is_val e1 ->
       let (e2', mem', entrada', saida') = small_step (e2, mem, entrada, saida) in
@@ -174,15 +168,15 @@ let rec small_step ((e, mem, entrada, saida) : expr * (expr * bool) array * int 
       let (e1', mem', entrada', saida') = small_step (e1, mem, entrada, saida) in
       (Let (var, tp, e1', e2), mem', entrada', saida')
   | New e1 when is_val e1 ->
-      let pos = empty_pos_mem mem in
-      let new_mem = Array.copy mem in
-      new_mem.(pos) <- (e1, true);
+      let new_mem = Hashtbl.copy mem in
+      let pos = Hashtbl.length new_mem in
+      Hashtbl.add new_mem pos e1;
       (Num pos, new_mem, entrada, saida)
   | New e1 ->
       let (e1', mem', entrada', saida') = small_step (e1, mem, entrada, saida) in
       (New e1', mem', entrada', saida')
   | Deref (Num addr) ->
-      (fst mem.(addr), mem, entrada, saida)
+      (Hashtbl.find mem addr, mem, entrada, saida)
   | Deref e1 ->
       let (e1', mem', entrada', saida') = small_step (e1, mem, entrada, saida) in
       (Deref e1', mem', entrada', saida')
@@ -292,7 +286,7 @@ let test_typeInfer () =
     (Let("x", TyInt, Num 5, Id "x"), TyInt);
     (New(Num 10), TyRef TyInt);
     (Seq(Unit, Num 1), TyInt);
-    (Print(Num 1), TyUnit)
+    (Print(Num 1), TyUnit);
   ] in
   List.iter (fun (expr, expected_type) ->
       let inferred_type = typeInfer (expr, []) in
@@ -300,7 +294,7 @@ let test_typeInfer () =
     ) test_cases;
   print_endline "All type inference tests passed!"
 
-let big_step((e, mem, entrada, saida) : expr * (expr * bool) array * int list * int list) : (expr * (expr * bool) array * int list * int list) =
+let big_step((e, mem, entrada, saida) : expr * (int, expr) Hashtbl.t * int list * int list) : (expr * (int, expr) Hashtbl.t  * int list * int list) =
   let rec loop(e_atual, mem_atual, entrada_atual, saida_atual) =
     if is_val e_atual then (e_atual,mem_atual,entrada_atual,saida_atual)
     else 
@@ -311,7 +305,7 @@ let big_step((e, mem, entrada, saida) : expr * (expr * bool) array * int list * 
   
 let main (entrada: int list) =
 
-  let mem = Array.make 100 (Unit, false) in 
+  let mem = Hashtbl.create 0 in 
   let saida = [] in
 
   let rec loop (e, mem, entrada, saida) =

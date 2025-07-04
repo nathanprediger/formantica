@@ -75,7 +75,87 @@ let fat2 =
             Print(Deref(Id "y"))
           )
          )
+     ) 
+    
+let ex1 =
+  Let("x",TyRef(TyInt), New(Num(3)), 
+      Seq( 
+        Asg(Id("x") , Binop(Sum,Read,Num(1))),
+        Print(Deref(Id("x")))   
+      )
+     );;
+
+            
+let ex2 =
+  Let("x",TyBool, Bool(true), 
+      Seq(
+        Let("x",TyInt, Num(3), 
+            Print(Binop(Sum,Id("x"),Num(1)))
+           )
+        ,
+        Id("x")
+      )
+     )   
+;;
+
+
+let ex3 = If(Binop(Lt,Num(3),Num(5)),
+             Bool(true),
+             Unit)
+;;
+
+
+
+let ex4 =
+  Let("x",TyInt,Num(4),
+      Let("y",TyRef TyInt,New(Num(0)),
+          Let("a",TyRef TyInt,New(Num(0)),
+              Wh(Binop(Lt,Deref(Id("y")),Id("x")),
+                 Seq(
+                   Asg(Id("y"),Binop(Sum,Deref(Id("y")),Num(1)))
+                   , 
+                   Asg(Id("a"),Binop(Sum,Deref(Id("a")),Deref(Id("y"))))
+                 )
+                )
+             )
+         )
      )
+;;
+
+let ex5 =
+  Let ("y", TyRef TyBool, New(Bool(true)),
+       If( 
+         Binop(Lt,Deref(New(Num(5))), Num(2)),
+         New(Bool(false)),
+         Id("y")
+       )
+      )
+;;
+
+
+let ex6 =
+  Let("x",TyRef TyInt, New(Num(0)),
+      Let("a",TyRef TyInt,New(Num(1)),
+          Seq(
+            Asg(Id("x"), Read)
+            ,
+            Seq(
+              Wh(
+                Binop(Neq, Deref(Id("x")), Num(0) )
+                ,
+                Seq(
+                  Asg(Id("a"),Binop(Mul,Deref(Id("a")),Deref(Id("x"))))
+                  ,
+                  Asg(Id("x"),Binop(Sub,Deref(Id("x")),Num(1)))
+                )
+              ) 
+              ,
+              Print(Deref(Id("a")))
+            )
+          )
+         )
+     )
+;;
 
 let is_val (e: expr) : bool =
   match e with
@@ -286,7 +366,7 @@ let test_typeInfer () =
     (Let("x", TyInt, Num 5, Id "x"), TyInt);
     (New(Num 10), TyRef TyInt);
     (Seq(Unit, Num 1), TyInt);
-    (Print(Num 1), TyUnit);
+    (Print(Num 1), TyUnit)
   ] in
   List.iter (fun (expr, expected_type) ->
       let inferred_type = typeInfer (expr, []) in
@@ -294,14 +374,41 @@ let test_typeInfer () =
     ) test_cases;
   print_endline "All type inference tests passed!"
 
-let big_step((e, mem, entrada, saida) : expr * (int, expr) Hashtbl.t * int list * int list) : (expr * (int, expr) Hashtbl.t  * int list * int list) =
-  let rec loop(e_atual, mem_atual, entrada_atual, saida_atual) =
-    if is_val e_atual then (e_atual,mem_atual,entrada_atual,saida_atual)
-    else 
+let valor_para_string (v: expr) : string =
+  match v with
+  | Num n -> string_of_int n
+  | Bool b -> string_of_bool b
+  | _ -> failwith "posicao da memoria com valor invalido"
+
+(* Itera sobre a hashtable e imprime o estado da memória *)
+let print_mem (mem: (int, expr) Hashtbl.t) : unit =
+  print_endline " Memoria";
+  if Hashtbl.length mem = 0 then
+    print_endline "vazia"
+  else
+    (* A função iter aplica a função anônima a cada par (chave, valor) na tabela *)
+    Hashtbl.iter (fun endereco valor ->
+        Printf.printf " mem[%d] -> %s\n" endereco (valor_para_string valor)
+      ) mem;
+;;
+
+let big_step ((e, mem, entrada, saida) : expr * (int, expr) Hashtbl.t * int list * int list) : (expr * (int, expr) Hashtbl.t * int list * int list) =
+  let rec loop (e_atual, mem_atual, entrada_atual, saida_atual) =
+    if is_val e_atual then
+      (e_atual, mem_atual, entrada_atual, saida_atual)
+    else
       let (e_seg, mem_seg, entrada_seg, saida_seg) = small_step(e_atual, mem_atual, entrada_atual, saida_atual) in
       loop(e_seg, mem_seg, entrada_seg, saida_seg)
   in
-  loop (e, mem, entrada, saida)
+
+  let (_, mem_final, _, _) as resultado_final =
+    loop (e, mem, entrada, saida)
+  in
+
+  print_mem mem_final;
+
+  resultado_final
+;;
   
 let main (entrada: int list) =
 
